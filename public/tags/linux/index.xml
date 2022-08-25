@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>linux on My New Hugo Site</title>
+    <link>http://example.org/tags/linux/</link>
+    <description>Recent content in linux on My New Hugo Site</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <lastBuildDate>Wed, 24 Aug 2022 20:45:52 +0200</lastBuildDate><atom:link href="http://example.org/tags/linux/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>post2</title>
+      <link>http://example.org/posts/post2/</link>
+      <pubDate>Wed, 24 Aug 2022 20:45:52 +0200</pubDate>
+      
+      <guid>http://example.org/posts/post2/</guid>
+      <description>Video damn bruh False </description>
+    </item>
+    
+  </channel>
+</rss>

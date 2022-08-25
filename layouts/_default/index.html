@@ -1,0 +1,14 @@
+{{ define "main" }} {{/* REPLACES MAIN BLOCK IN index.html */}}
+
+    {{ $red := index .Site.Data.colors 0 }}
+    {{ $red.value }}
+
+    <h1>{{ .Title }}</h1>
+    {{ range .Pages }}
+        <a href="{{ .Permalink }}">{{ .Title }} </a><br>
+    {{ end }}
+
+{{ end }}
+{{ define "footer" }} {{/* REPLACES FOOTER BLOCK IN index.html */}}
+    Footer
+{{ end }}

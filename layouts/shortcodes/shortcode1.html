@@ -1,0 +1,6 @@
+{{ $var := .Get "var" }}
+{{ if ge (len $var) 6 }}
+    True
+{{ else }}
+    False
+{{ end }}

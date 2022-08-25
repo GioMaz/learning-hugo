@@ -1,0 +1,11 @@
+{{ define "main" }} {{/* REPLACES MAIN BLOCK IN index.html */}}
+    {{ .Content }}
+    {{ range .Pages }}
+        <a href="{{ .Permalink }}">{{ .Title }}</a>
+        <p>{{ .Date }}</p>
+        <p>{{ truncate 128 .Content | plainify }}</p>
+    {{ end }}
+{{ end }}
+{{ define "footer" }} {{/* REPLACES FOOTER BLOCK IN index.html */}}
+    Footer
+{{ end }}

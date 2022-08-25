@@ -1,0 +1,186 @@
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Document</title>
+</head>
+<body>
+    My New Hugo Site
+     
+    <h1>post1</h1>
+<p>2022-08-24 00:41:15 &#43;0200 CEST</p>
+
+    <p>In this post I describe a problem I ran into the other day that had me stumped briefly—why doesn&rsquo;t my ASP.NET Core app running in Docker respond when I try and navigate to it? The problem was related to how ASP.NET Core binds to ports by default.</p>
+<h2 id="background-testing-aspnet-core-on-centosbackground-testing-asp-net-core-on-centos">Background: testing ASP.NET Core on CentOS<a href="#background-testing-asp-net-core-on-centos"></a></h2>
+<p>I ran into my problem the other day while responding to an issue report related to CentOS. In order to diagnose the issue, I needed to run an ASP.NET Core application on CentOS. Unfortunately, <a href="https://docs.microsoft.com/en-us/dotnet/core/install/linux-centos">while ASP.NET Core supports CentOS</a>, they don&rsquo;t provide Docker images with it preinstalled. Currently, they provide Linux Docker images based on:</p>
+<ul>
+<li>Debian</li>
+<li>Ubuntu</li>
+<li>Alpine</li>
+</ul>
+<p>Additionally, while you <em>can</em> <a href="https://docs.microsoft.com/en-us/windows/wsl/use-custom-distro">install CentOS in WSL</a>, it&rsquo;s a lot more hassle than something like Ubuntu, which you can install directly from the Microsoft Store.</p>
+<p>This left me with one obvious answer - build my own CentOS Docker image, and install ASP.NET Core in it &ldquo;manually&rdquo;.</p>
+<h3 id="creating-the-sample-app-with-a-dockerfilecreating-the-sample-app-with-a-dockerfile-">Creating the sample app with a Dockerfile.<a href="#creating-the-sample-app-with-a-dockerfile-"></a></h3>
+<p>I started by creating a sample web application using Visual Studio. I could have used the CLI to create the app, but I decided to use Visual Studio as I knew it would give me the option to auto-generate the Dockerfile as well. This would save a few minutes.</p>
+<p>I chose ASP.NET Core Web API, used minimal APIs, disabled https, enabled Docker support (Linux) and generated the solution:</p>
+<!-- raw HTML omitted -->
+<p>This generates a Debian-based dockerfile by default (the <code>mcr.microsoft.com/dotnet/aspnetcore:6.0</code> images are Debian based unless you select different tags), which looks like this:</p>
+<pre tabindex="0"><code>FROM mcr.microsoft.com/dotnet/aspnet:6.0 AS base
+WORKDIR /app
+EXPOSE 80
+
+FROM mcr.microsoft.com/dotnet/sdk:6.0 AS build
+WORKDIR /src
+COPY [&#34;WebApplication1.csproj&#34;, &#34;.&#34;]
+RUN dotnet restore &#34;./WebApplication1.csproj&#34;
+COPY . .
+WORKDIR &#34;/src/.&#34;
+RUN dotnet build &#34;WebApplication1.csproj&#34; -c Release -o /app/build
+
+FROM build AS publish
+RUN dotnet publish &#34;WebApplication1.csproj&#34; -c Release -o /app/publish
+
+FROM base AS final
+WORKDIR /app
+COPY --from=publish /app/publish .
+ENTRYPOINT [&#34;dotnet&#34;, &#34;WebApplication1.dll&#34;] 
+</code></pre><p>This Dockerfile uses the best practice of multi-staged builds to ensure your runtime images are as small as possible. It shows 4 distinct phases</p>
+<ul>
+<li><code>mcr.microsoft.com/dotnet/aspnetcore:6.0 AS base</code>. This stage defines the base image that will be used to <em>run</em> your application. It contains the <em>minimal</em> dependencies to run your application.</li>
+<li><code>mcr.microsoft.com/dotnet/sdk:6.0 AS build</code>. This stage defines the docker image that will be used to <em>build</em> your application. It includes the full .NET SDK, as well as <a href="https://andrewlock.net/exploring-the-net-core-mcr-docker-files-runtime-vs-aspnet-vs-sdk/#4-mcr-microsoft-com-dotnet-core-sdk-2-2-105">various other dependencies</a>. This stage actually builds your application.</li>
+<li><code>FROM build AS publish</code>. This stage is used to <em>publish</em> your application.</li>
+<li><code>base AS final</code>. The final stage is what you would actually deploy to production. It is based on the <code>base</code> image, but with the <code>publish</code> assets copied in.</li>
+</ul>
+<blockquote>
+<p>Multi-stage builds are always best-practice when you&rsquo;re deploying to Docker, but this one is more complex than it needs to be in general. It has additional stages to make it quicker for Visual Studio to <strong>develop</strong> inside Docker images too, <a href="https://docs.microsoft.com/en-us/visualstudio/containers/container-build?view=vs-2022">using &ldquo;fast mode&rdquo;</a>. If you&rsquo;re only <em>deploying</em> to Docker, not developing in Docker, then you can simplify this file.</p>
+</blockquote>
+<h3 id="creating-a-centos-based-aspnet-core-imagecreating-a-centos-based-asp-net-core-image">Creating a CentOS-based ASP.NET Core image<a href="#creating-a-centos-based-asp-net-core-image"></a></h3>
+<p>For my testing, I only needed to <em>run</em> the application on CentOS, I didn&rsquo;t need to <em>build</em> on CentOS, so that meant I could leave the <code>build</code> stage as it was, building on Debian. It was only the first stage, <code>base</code>, that I would need to switch to a CentOS-based image.</p>
+<p>I started by finding <a href="https://docs.microsoft.com/en-us/dotnet/core/install/linux-centos">the instructions for how to install ASP.NET Core on CentOS</a>. Each Linux distro is a little bit different, with some versions using package managers, others using Snap packages etc. For CentOS we can use the <a href="http://yum.baseurl.org/"><code>yum</code> package manager</a>.</p>
+<p>Installing ASP.NET Core is thankfully, very simple. You need only to add the Microsoft package repository and install using YUM. Starting from the CentOS version 7 Docker image, we can build out ASP.NET Core Docker image:</p>
+<pre tabindex="0"><code>FROM centos:7 AS base
+
+# Add Microsoft package repository and install ASP.NET Core
+RUN rpm -Uvh https://packages.microsoft.com/config/centos/7/packages-microsoft-prod.rpm \
+    &amp;&amp; yum install -y aspnetcore-runtime-6.0
+
+WORKDIR /app
+
+# ... remainder of dockerfile as before 
+</code></pre><p>With that change to the <code>base</code> image, we can now build and run our sample ASP.NET Core app on CentOS using a command like the following:</p>
+<pre tabindex="0"><code>docker build -t centos-test .
+docker run --rm -p 8000:5000 centos-test 
+</code></pre><p>Which, when you run it and navigate to http://localhost:8000/weatherforecast, looks something like this:</p>
+<!-- raw HTML omitted -->
+<p>Oh dear.</p>
+<h2 id="debugging-why-the-app-isnt-respondingdebugging-why-the-app-isn-t-responding">Debugging why the app isn&rsquo;t responding<a href="#debugging-why-the-app-isn-t-responding"></a></h2>
+<p>I hadn&rsquo;t expected that result. I thought that it would be a simple case of installing ASP.NET Core, and the app would just work. My first thought was that I had introduced a bug somewhere that was causing the app to fail to start, but the logs printed to the console suggested the app was listening:</p>
+<pre tabindex="0"><code>info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:5000
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Production
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: /app/ 
+</code></pre><p>Additionally, I could see that the app was also listening on the <em>correct</em> port, port 5000. In my Docker command I specified that Docker should map port <code>5000</code> <em>inside</em> the container to port <code>8000</code> <em>outside</em> the container, so that also looked correct.</p>
+<blockquote>
+<p>I double checked <a href="https://docs.docker.com/engine/reference/run/#expose-incoming-ports">the documentation</a> at this point, to make sure I had the <code>8000:5000</code> the correct way around, and yes, the format is <code>host:container</code></p>
+</blockquote>
+<p>This all seemed rather odd. <em>Presumably</em>, the application wasn&rsquo;t receiving the request at all, but just to be sure, I bumped up the logging to <code>Debug</code> level and tried again:</p>
+<pre tabindex="0"><code>docker run --rm -p 8000:5000 `
+    -e Logging__Loglevel__Default=Debug `
+    -e Logging__Loglevel__Microsoft.AspNetCore=Debug `
+    centos-test 
+</code></pre><p>Sure enough, the logs were more verbose, but there was no indication of a request making it through</p>
+<pre tabindex="0"><code>dbug: Microsoft.Extensions.Hosting.Internal.Host[1]
+      Hosting starting
+info: Microsoft.AspNetCore.Server.Kestrel[0]
+      Unable to bind to http://localhost:5000 on the IPv6 loopback interface: &#39;Cannot assign requested address&#39;.
+dbug: Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServer[1]
+      Unable to locate an appropriate development https certificate.
+dbug: Microsoft.AspNetCore.Server.Kestrel[0]
+      No listening endpoints were configured. Binding to http://localhost:5000 by default.
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:5000
+dbug: Microsoft.AspNetCore.Hosting.Diagnostics[13]
+      Loaded hosting startup assembly WebApplication1
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Production
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: /app/
+dbug: Microsoft.Extensions.Hosting.Internal.Host[2]
+      Hosting started 
+</code></pre><p>So at this point I had two possible scenarios</p>
+<ul>
+<li>The app isn&rsquo;t working at all</li>
+<li>The app isn&rsquo;t correctly exposed outside of the container</li>
+</ul>
+<p>To test the first case I decided to <code>exec</code> into the container and <code>curl</code> the endpoint while it was running. This would tell me whether the app was running correctly inside the container, at the port I expected. I could have used the cli to do this using <code>docker exec ...</code>, but for simplicity <a href="https://andrewlock.net/installing-docker-desktop-for-windows/">I used Docker Desktop to open a command prompt inside the container</a>, and to <code>curl</code> the endpoint:</p>
+<!-- raw HTML omitted -->
+<p>Sure enough, <code>curl</code>-ing the endpoint inside the container (using the <em>container</em> port, <code>5000</code>) returned the data I expected. So the app was working <em>and</em> it was responding on the correct port. That narrowed down the possible failures modes.</p>
+<p>At this point I was running out of options. Luckily, a word in the application logs suddenly caught my eye and pointed me in the right direction. <strong>Loopback</strong>.</p>
+<h2 id="aspnet-core-urls-loopback-vs-ip-addressasp-net-core-urls-loopback-vs-ip-address">ASP.NET Core URLs: loopback vs. IP Address<a href="#asp-net-core-urls-loopback-vs-ip-address"></a></h2>
+<p>One of the most popular posts on my blog (two years after I wrote it) is <a href="https://andrewlock.net/5-ways-to-set-the-urls-for-an-aspnetcore-app/">&ldquo;5 ways to set the URLs for an ASP.NET Core app&rdquo;</a>. In that post I describe some of the ways you can control which URL ASP.NET Core binds to on startup, but the relevant section right now is titled<a href="https://andrewlock.net/5-ways-to-set-the-urls-for-an-aspnetcore-app/#what-urls-can-you-use-">&ldquo;What URLs can you use?&rdquo;</a>. This section mentions that there are essentially 3 types of URLs that you can bind:</p>
+<ul>
+<li>The &ldquo;loopback&rdquo; hostname for IPv4 and IPv6 (e.g. <code>http://localhost:5000</code>), in the format: <code>{scheme}://{loopbackAddress}:{port}</code></li>
+<li>A specific IP address available on your machine (e.g. <code>http://192.168.8.31:5005</code>), in the format <code>{scheme}://{IPAddress}:{port}</code></li>
+<li>&ldquo;Any&rdquo; IP address for a given port (e.g. <code>http://*:6264</code>), in the format <code>{scheme}://*:{port}</code></li>
+</ul>
+<p>The &ldquo;loopback&rdquo; address is the network address that refers to &ldquo;the current machine&rdquo;. So if you access <code>http://localhost:5000</code>, you&rsquo;re trying to access port <code>5000</code> on the current machine. This is typically what you want when you&rsquo;re developing, and this is the default URL that ASP.NET Core apps bind to. So when you run an ASP.NET Core app locally, and navigate to <code>http://localhost:5000</code> in your browser, everything works, because everything is all coming from the same network interface, on the same machine.</p>
+<p>However, when you&rsquo;re inside a Docker container <em>requests aren&rsquo;t coming from the same network interface</em>. Essentially, you can think of the Docker container as a separate machine. Binding to <code>localhost</code> inside the Docker container will mean your app is never exposed outside of the container, rendering it rather useless.</p>
+<p>The way to fix this is to ensure your app binds to <em>any</em> IP Address, using the <code>{scheme}://*:{port}</code> syntax.</p>
+<blockquote>
+<p>As noted <a href="https://andrewlock.net/5-ways-to-set-the-urls-for-an-aspnetcore-app/#what-urls-can-you-use-">in my previous post</a>, you don&rsquo;t have to use <code>*</code> in this pattern, you can use anything that&rsquo;s not an IP address or <code>localhost</code>, so you can use <code>http://*:5000</code>, <code>http://+:5000</code>, or <code>http://example.com:5000</code> etc. All of these behave identically.</p>
+</blockquote>
+<p>By binding the ASP.NET Core application to <em>any</em> IP address, the request &ldquo;makes it through&rdquo; from the host, so it can be handled by your app. We can set the URL at runtime when we run the Docker image, using for example</p>
+<pre tabindex="0"><code>docker run --rm -p 8000:5000 ` -e DOTNET_URLS=http://+:5000 centos-test 
+</code></pre><p>or we could bake it into the Dockerfile as shown below. The following is the complete final Dockerfile I used:</p>
+<pre tabindex="0"><code>FROM centos:7 AS base
+
+# Add Microsoft package repository and install ASP.NET Core
+RUN rpm -Uvh https://packages.microsoft.com/config/centos/7/packages-microsoft-prod.rpm \
+    &amp;&amp; yum install -y aspnetcore-runtime-6.0
+
+# Ensure we listen on any IP Address 
+ENV DOTNET_URLS=http://+:5000
+
+WORKDIR /app
+
+# ... remainder of dockerfile as before
+FROM mcr.microsoft.com/dotnet/sdk:6.0 AS build
+WORKDIR /src
+COPY [&#34;WebApplication1.csproj&#34;, &#34;.&#34;]
+RUN dotnet restore &#34;./WebApplication1.csproj&#34;
+COPY . .
+WORKDIR &#34;/src/.&#34;
+RUN dotnet build &#34;WebApplication1.csproj&#34; -c Release -o /app/build
+
+FROM build AS publish
+RUN dotnet publish &#34;WebApplication1.csproj&#34; -c Release -o /app/publish
+
+FROM base AS final
+WORKDIR /app
+COPY --from=publish /app/publish .
+ENTRYPOINT [&#34;dotnet&#34;, &#34;WebApplication1.dll&#34;] 
+</code></pre><p>With this change we can re-build the Docker image, and run the app again with</p>
+<pre tabindex="0"><code>docker build -t centos-test .
+docker run --rm -p 8000:5000 centos-test 
+</code></pre><p>and finally, we can call the endpoint from our browser:</p>
+<!-- raw HTML omitted -->
+<p>So the important take away here is:</p>
+<blockquote>
+<p>When you build your own ASP.NET Core Docker images, make sure to configure the app to bind to any IP address, not just <code>localhost</code>.</p>
+</blockquote>
+<p>Of course, the official .NET Docker Images <a href="https://github.com/dotnet/dotnet-docker/blob/dcc508d238cd221147038362760c453134085c36/src/runtime-deps/6.0/cbl-mariner1.0/amd64/Dockerfile#L26">do that already</a>, binding to port 80 by setting <code>ASPNETCORE_URLS=http://+:80</code>.</p>
+<h2 id="summarysummary">Summary<a href="#summary"></a></h2>
+<p>In this post I described a situation in which I was trying to build a CentOS Docker image to run ASP.NET Core. I described how I created the image by following the ASP.NET Core installation instructions, but that my ASP.NET Core app wasn&rsquo;t responding to requests. I walked through my debugging process to try to get to the root cause of the problem, and realised that I was binding to the loopback address. This meant the application was accessible from <em>inside</em> the Docker container, but not from outside it. To resolve the issue, I made sure to bind my ASP.NET Core app to any IP address, not just <code>localhost</code>.</p>
+
+
+     
+    Footer
+
+</body>
+</html>

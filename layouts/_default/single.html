@@ -1,0 +1,7 @@
+{{ define "main" }} {{/* REPLACES MAIN BLOCK IN index.html */}}
+    {{ partial "header" . }}
+    {{ .Content }}
+{{ end }}
+{{ define "footer" }} {{/* REPLACES FOOTER BLOCK IN index.html */}}
+    Footer
+{{ end }}

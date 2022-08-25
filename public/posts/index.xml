@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>posts on My New Hugo Site</title>
+    <link>http://example.org/posts/</link>
+    <description>Recent content in posts on My New Hugo Site</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <lastBuildDate>Sun, 24 Jul 2022 15:22:00 +0200</lastBuildDate><atom:link href="http://example.org/posts/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>post2</title>
+      <link>http://example.org/posts/post2/</link>
+      <pubDate>Wed, 24 Aug 2022 20:45:52 +0200</pubDate>
+      
+      <guid>http://example.org/posts/post2/</guid>
+      <description>Video damn bruh False </description>
+    </item>
+    
+    <item>
+      <title>post1</title>
+      <link>http://example.org/posts/post1/</link>
+      <pubDate>Wed, 24 Aug 2022 00:41:15 +0200</pubDate>
+      
+      <guid>http://example.org/posts/post1/</guid>
+      <description>In this post I describe a problem I ran into the other day that had me stumped briefly—why doesn&amp;rsquo;t my ASP.NET Core app running in Docker respond when I try and navigate to it? The problem was related to how ASP.NET Core binds to ports by default.
+Background: testing ASP.NET Core on CentOS I ran into my problem the other day while responding to an issue report related to CentOS. In order to diagnose the issue, I needed to run an ASP.</description>
+    </item>
+    
+  </channel>
+</rss>
